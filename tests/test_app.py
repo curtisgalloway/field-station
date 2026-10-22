@@ -3,11 +3,14 @@
 """The service: WebSocket feed, health endpoints and CLI."""
 
 import asyncio
+import json
+import re
 
 import aiohttp
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
+from field_station import adsb as adsb_mod
 from field_station import app as app_mod
 
 
@@ -236,3 +239,76 @@ async def test_stalled_client_is_dropped_without_delaying_others(fake_adsb, fake
         await good.close()
     finally:
         await client.close()
+
+
+async def test_crashed_poller_marks_source_unavailable(
+    fake_adsb, fake_ais, monkeypatch
+):
+    calls = {"n": 0}
+    real = adsb_mod.reduce_aircraft
+
+    def flaky(data, receiver):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("unexpected")
+        return real(data, receiver)
+
+    monkeypatch.setattr(adsb_mod, "reduce_aircraft", flaky)
+    monkeypatch.setattr(adsb_mod, "POLL_ACTIVE_SECONDS", 0.02)
+    client, app = await _client(fake_adsb, fake_ais, Clock(1000.0))
+    try:
+        poller = app[app_mod.ADSB_KEY]
+        await _until(lambda: calls["n"] >= 2)
+        await _until(lambda: not poller.status()["available"])
+        await asyncio.sleep(0.05)
+        resp = await client.get("/healthz")
+        assert resp.status == 503
+        assert "adsb" in await resp.text()
+    finally:
+        await client.close()
+
+
+async def test_failed_socket_drops_client():
+    class BrokenWs:
+
+        async def send_str(self, _):
+            raise ConnectionResetError("gone")
+
+        async def close(self):
+            pass
+
+    registry = set()
+    client = app_mod.Client(BrokenWs(), registry)
+    registry.add(client)
+    client.queue.put_nowait("{}")
+    await client.drain()
+    assert client not in registry
+
+
+async def test_no_distance_in_any_published_text(fake_adsb, fake_ais):
+    client, app = await _client(fake_adsb, fake_ais, Clock(1000.0))
+    try:
+        await _until(
+            lambda: app[app_mod.ADSB_KEY].status()["available"]
+            and app[app_mod.AIS_KEY].status()["available"]
+        )
+        ws = await client.ws_connect("/ws")
+        texts = []
+        for _ in range(4):
+            texts.append(json.dumps(await ws.receive_json()))
+        texts.append(json.dumps(app[app_mod.LOG_KEY].history()))
+        assert any('"source": "adsb"' in t for t in texts)
+        for text in texts:
+            assert not re.search(r"\d+\s*nm", text)
+        await ws.close()
+    finally:
+        await client.close()
+
+
+def test_host_defaults_to_loopback(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        app_mod.web, "run_app", lambda app, host, port: seen.update(host=host)
+    )
+    app_mod.main(["--adsb-url", "http://example.invalid/aircraft.json"])
+    assert seen["host"] == "127.0.0.1"

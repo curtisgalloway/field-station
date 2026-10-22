@@ -21,6 +21,7 @@ import time
 import aiohttp
 
 from field_station.geo import haversine_km
+from field_station.text import clean_text
 
 log = logging.getLogger("field_station.adsb")
 
@@ -80,7 +81,7 @@ def reduce_aircraft(data: dict, receiver: tuple[float, float]) -> list[dict]:
         alt = entry.get("alt_baro", entry.get("alt_geom"))
         contact = {
             "hex": entry.get("hex"),
-            "flight": (entry.get("flight") or "").strip() or None,
+            "flight": clean_text(entry.get("flight")),
             "alt_ft": 0 if alt == "ground" else alt,
             "ground": alt == "ground",
             "gs_kt": entry.get("gs"),
@@ -190,11 +191,13 @@ class AdsbPoller:
         if len(fresh) > 4:
             await self._on_log("adsb", f"{len(fresh)} new contacts")
             return
-        rx_lat, rx_lon = self._receiver
         for c in fresh:
             ident = c.get("flight") or c.get("hex")
-            nm = haversine_km(rx_lat, rx_lon, c["lat"], c["lon"]) / 1.852
-            await self._on_log("adsb", f"contact {ident} · {nm:.0f} nm")
+            await self._on_log("adsb", f"contact {ident}")
+
+    async def mark_down(self) -> None:
+        """Publishes the source as unavailable (used when the poll loop dies)."""
+        await self._set_status({"type": "adsb", "available": False, "aircraft": []})
 
     async def _set_status(self, status: dict) -> None:
         was = self._status.get("available")

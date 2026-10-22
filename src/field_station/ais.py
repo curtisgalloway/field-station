@@ -29,6 +29,8 @@ import time
 
 import aiohttp
 
+from field_station.text import clean_text
+
 log = logging.getLogger("field_station.ais")
 
 POLL_ACTIVE_SECONDS = 5.0  # ships on the scope; they move slowly
@@ -99,7 +101,7 @@ def _rank_ships(data: dict) -> tuple[list[tuple[float, dict]], int]:
             continue  # unranked entries are dropped, as the terminal did
         contact = {
             "mmsi": entry.get("mmsi"),
-            "name": (entry.get("shipname") or "").strip() or None,
+            "name": clean_text(entry.get("shipname")),
             "sog_kt": entry.get("speed"),
             "cog": entry.get("cog"),
             "heading": entry.get("heading"),
@@ -211,9 +213,13 @@ class AisPoller:
         if len(fresh) > 4:
             await self._on_log("ais", f"{len(fresh)} new vessels")
             return
-        for nm, c in fresh:
+        for _, c in fresh:
             ident = c.get("name") or c["mmsi"]
-            await self._on_log("ais", f"vessel {ident} · {nm:.0f} nm")
+            await self._on_log("ais", f"vessel {ident}")
+
+    async def mark_down(self) -> None:
+        """Publishes the source as unavailable (used when the poll loop dies)."""
+        await self._set_status({"type": "ais", "available": False, "vessels": []})
 
     async def _set_status(self, status: dict) -> None:
         was = self._status.get("available")

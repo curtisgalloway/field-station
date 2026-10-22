@@ -93,5 +93,17 @@ async def test_logs_and_failure(fake_adsb):
     assert delay == adsb.RETRY_SECONDS
     assert ("adsb", "receiver online") in logs
     assert ("adsb", "receiver offline") in logs
-    assert ("adsb", "contact SKW5502 · 2 nm") in logs
+    assert ("adsb", "contact SKW5502") in logs
     assert poller.status()["available"] is False
+
+
+def test_flight_is_sanitized(aircraft_fixture, receiver_fixture):
+    rx = (receiver_fixture["lat"], receiver_fixture["lon"])
+    dirty = ["\x1b[31mRED\x1b[0m", "A\nB\x00C", "x" * 100, " \x07 "]
+    for entry, name in zip(aircraft_fixture["aircraft"], dirty):
+        entry["flight"] = name
+    out = {c["hex"]: c["flight"] for c in adsb.reduce_aircraft(aircraft_fixture, rx)}
+    assert out["a00001"] == "RED"
+    assert out["a00002"] == "A BC"
+    assert out["a00003"] == "x" * 32
+    assert out["a00004"] is None

@@ -13,6 +13,7 @@ import argparse
 import asyncio
 from collections.abc import Callable
 import contextlib
+import functools
 import importlib.metadata
 import json
 import logging
@@ -52,14 +53,25 @@ CLIENT_QUEUE_SIZE = 64
 class Client:
     """One connected consumer: a bounded outbox drained by its own task."""
 
-    def __init__(self, ws: web.WebSocketResponse) -> None:
+    def __init__(self, ws: web.WebSocketResponse, registry: set | None = None) -> None:
         self.ws = ws
+        self.registry = registry
         self.queue: asyncio.Queue[str] = asyncio.Queue(maxsize=CLIENT_QUEUE_SIZE)
         self.writer: asyncio.Task | None = None
 
     async def drain(self) -> None:
-        while True:
-            await self.ws.send_str(await self.queue.get())
+        try:
+            while True:
+                await self.ws.send_str(await self.queue.get())
+        except (ConnectionError, RuntimeError) as exc:
+            log.info("dropping a client whose socket failed: %s", exc)
+            if self.registry is not None:
+                self.registry.discard(self)
+            asyncio.ensure_future(self._close())
+
+    async def _close(self) -> None:
+        with contextlib.suppress(ConnectionError, RuntimeError):
+            await self.ws.close()
 
     def drop(self) -> None:
         """Abandons a client that cannot keep up."""
@@ -84,7 +96,7 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
     app = request.app
-    client = Client(ws)
+    client = Client(ws, app[CLIENTS_KEY])
     # No await between registering and snapshotting, so every later event
     # lands in the queue after the burst and none is lost or duplicated.
     app[CLIENTS_KEY].add(client)
@@ -136,15 +148,25 @@ async def statusz(request: web.Request) -> web.Response:
 
 
 async def _start(app: web.Application) -> None:
-    for poller in _sources(app).values():
-        app[TASKS_KEY].append(asyncio.create_task(poller.run()))
+    for name, poller in _sources(app).items():
+        task = asyncio.create_task(poller.run())
+        task.add_done_callback(functools.partial(_poller_died, poller, name))
+        app[TASKS_KEY].append(task)
+
+
+def _poller_died(poller, name: str, task: asyncio.Task) -> None:
+    """Reports a poller that crashed as unavailable instead of frozen."""
+    if task.cancelled() or task.exception() is None:
+        return
+    log.error("%s poller crashed", name, exc_info=task.exception())
+    asyncio.ensure_future(poller.mark_down())
 
 
 async def _stop(app: web.Application) -> None:
     for task in app[TASKS_KEY]:
         task.cancel()
     for task in app[TASKS_KEY]:
-        with contextlib.suppress(asyncio.CancelledError):
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await task
 
 
@@ -195,7 +217,7 @@ def make_app(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="field-station", description=__doc__)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument(
         "--adsb-url",

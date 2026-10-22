@@ -112,5 +112,14 @@ async def test_poller_publishes_and_logs(fake_ais):
     assert len(event["vessels"]) == 5
     assert ("ais", "receiver online") in logs
     assert ("ais", "receiver offline") in logs
-    assert ("ais", "vessel SAMPLE SLOOP · 1 nm") in logs
+    assert ("ais", "vessel SAMPLE SLOOP") in logs
     assert poller.status()["available"] is False
+
+
+def test_shipname_is_sanitized(ships_fixture):
+    dirty = ["\x1b[31mRED\x1b[0m", "A\nB\x00C", "x" * 100]
+    for entry, name in zip(ships_fixture["ships"], dirty):
+        entry["shipname"] = name
+    names = [c["name"] for c in ais.reduce_ships(ships_fixture)[0]]
+    assert "RED" in names and "A BC" in names and "x" * 32 in names
+    assert all(n is None or len(n) <= 32 for n in names)
