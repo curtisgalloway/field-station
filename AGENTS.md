@@ -14,7 +14,7 @@ hostnames or domains, no private network addresses, no machine names, no
 home-directory paths, and no real receiver coordinates, in code, tests,
 fixtures, docs, or commit messages. Receiver URLs come only from flags or
 env (`FIELD_STATION_ADSB_URL`, `FIELD_STATION_AIS_URL`); there are no
-default URLs in code. `tests/test_privacy.py` scans tracked files.
+default URLs in code. `tests/test_privacy.py` scans tracked file names and contents for private addresses and home paths, and for private terms read from an untracked file (`FIELD_STATION_PRIVATE_TERMS`, default `~/.config/field-station/private-terms`; skipped if absent). Never put those terms in the repo.
 
 The feed never carries bearing or distance from the receiver, nor the
 receiver's position (`receiver.json` is read for ranking and log text only).
