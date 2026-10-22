@@ -147,3 +147,92 @@ def test_no_sources_refuses_start(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         app_mod.main([])
     assert exc.value.code != 0
+
+
+async def _poll(poller) -> None:
+    async with aiohttp.ClientSession() as session:
+        await poller._poll_once(session)  # pylint: disable=protected-access
+
+
+async def test_seconds_since_poll_tracks_unchanged_polls(fake_adsb, fake_ais):
+    clock = Clock(1000.0)
+    client, app = await _client(fake_adsb, fake_ais, clock)
+    try:
+        await _until(
+            lambda: app[app_mod.ADSB_KEY].status()["available"]
+            and app[app_mod.AIS_KEY].status()["available"]
+        )
+        await _poll(app[app_mod.ADSB_KEY])  # settle msg_rate
+        await _poll(app[app_mod.AIS_KEY])
+        for now in (1010.0, 1020.0):
+            clock.now = now
+            await _poll(app[app_mod.ADSB_KEY])
+            await _poll(app[app_mod.AIS_KEY])
+            status = await (await client.get("/statusz")).json()
+            for name in ("adsb", "ais"):
+                assert status["sources"][name]["seconds_since_poll"] == 0.0
+    finally:
+        await client.close()
+
+
+async def test_trails_age_out_during_outage(fake_adsb, fake_ais):
+    clock = Clock(1000.0)
+    client, app = await _client(fake_adsb, fake_ais, clock)
+    try:
+        poller = app[app_mod.ADSB_KEY]
+        await _until(lambda: poller.status()["available"])
+        assert app[app_mod.TRAILS_KEY].snapshot()
+        fake_adsb.fail("/data/aircraft.json")
+        clock.now = 1500.0
+        await _poll(poller)
+        assert not poller.status()["available"]
+        assert app[app_mod.TRAILS_KEY].snapshot() == {}
+    finally:
+        await client.close()
+
+
+async def test_healthz_source_goes_down_after_up(fake_adsb, fake_ais):
+    client, app = await _client(fake_adsb, fake_ais, Clock(1000.0))
+    try:
+        await _until(
+            lambda: app[app_mod.ADSB_KEY].status()["available"]
+            and app[app_mod.AIS_KEY].status()["available"]
+        )
+        assert (await client.get("/healthz")).status == 200
+        fake_adsb.fail("/data/aircraft.json")
+        await _poll(app[app_mod.ADSB_KEY])
+        resp = await client.get("/healthz")
+        assert resp.status == 503
+        body = await resp.text()
+        assert "adsb" in body and "ais" not in body
+    finally:
+        await client.close()
+
+
+class _StalledWs:
+    closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_stalled_client_is_dropped_without_delaying_others(fake_adsb, fake_ais):
+    client, app = await _client(fake_adsb, fake_ais, Clock(1000.0))
+    try:
+        await _until(lambda: app[app_mod.ADSB_KEY].status()["available"])
+        good = await client.ws_connect("/ws")
+        for _ in range(4):
+            await good.receive_json()
+        stalled = app_mod.Client(_StalledWs())
+        stalled.queue = asyncio.Queue(maxsize=1)
+        stalled.queue.put_nowait("{}")  # full, and nothing drains it
+        app[app_mod.CLIENTS_KEY].add(stalled)
+        await app[app_mod.LOG_KEY].add("test", "hello")
+        msg = await asyncio.wait_for(good.receive_json(), 2)
+        assert msg["type"] == "log"
+        assert stalled not in app[app_mod.CLIENTS_KEY]
+        await asyncio.sleep(0)
+        assert stalled.ws.closed
+        await good.close()
+    finally:
+        await client.close()

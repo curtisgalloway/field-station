@@ -98,7 +98,12 @@ def reduce_aircraft(data: dict, receiver: tuple[float, float]) -> list[dict]:
 class AdsbPoller:
     """Polls aircraft.json and publishes {"type": "adsb", ...} events."""
 
-    def __init__(self, publish, url: str, on_log=None) -> None:
+    def __init__(
+        self, publish, url: str, on_log=None, clock=time.time, on_poll=None
+    ) -> None:
+        self._clock = clock
+        self._on_poll = on_poll
+        self.last_ok: float | None = None  # clock time of last good poll
         self._publish = publish
         self._url = url
         self._on_log = on_log
@@ -128,6 +133,12 @@ class AdsbPoller:
             raise ValueError("receiver.json has no lat/lon")
 
     async def _poll_once(self, session: aiohttp.ClientSession) -> float:
+        delay = await self._poll_inner(session)
+        if self._on_poll is not None:
+            await self._on_poll(self._status)
+        return delay
+
+    async def _poll_inner(self, session: aiohttp.ClientSession) -> float:
         try:
             if self._receiver is None:
                 await self._fetch_receiver(session)
@@ -148,6 +159,7 @@ class AdsbPoller:
             await self._set_status({"type": "adsb", "available": False, "aircraft": []})
             return RETRY_SECONDS
 
+        self.last_ok = self._clock()
         await self._log_new_contacts(contacts)
         now = time.monotonic()
         messages = float(data.get("messages", 0))

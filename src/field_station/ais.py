@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import aiohttp
 
@@ -137,7 +138,12 @@ def reduce_ships(data: dict) -> tuple[list[dict], int]:
 class AisPoller:
     """Polls ships.json and publishes {"type": "ais", ...} events."""
 
-    def __init__(self, publish, url: str, on_log=None) -> None:
+    def __init__(
+        self, publish, url: str, on_log=None, clock=time.time, on_poll=None
+    ) -> None:
+        self._clock = clock
+        self._on_poll = on_poll
+        self.last_ok: float | None = None  # clock time of last good poll
         self._publish = publish
         self._url = url
         self._on_log = on_log
@@ -154,6 +160,12 @@ class AisPoller:
                 await asyncio.sleep(delay)
 
     async def _poll_once(self, session: aiohttp.ClientSession) -> float:
+        delay = await self._poll_inner(session)
+        if self._on_poll is not None:
+            await self._on_poll(self._status)
+        return delay
+
+    async def _poll_inner(self, session: aiohttp.ClientSession) -> float:
         try:
             async with session.get(
                 self._url, timeout=aiohttp.ClientTimeout(total=10)
@@ -173,6 +185,7 @@ class AisPoller:
             return RETRY_SECONDS
 
         contacts = [contact for _, contact in ranked]
+        self.last_ok = self._clock()
         await self._log_new_vessels(ranked)
         await self._set_status(
             {

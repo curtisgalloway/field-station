@@ -34,7 +34,6 @@ TRAILS_KEY = web.AppKey("trails", TrailStore)
 LOG_KEY = web.AppKey("log", EventLog)
 CLIENTS_KEY = web.AppKey("clients", set)
 CLOCK_KEY = web.AppKey("clock", object)
-LAST_OK_KEY = web.AppKey("last_ok", dict)
 TASKS_KEY = web.AppKey("tasks", list)
 
 # Event field that holds each source's contact list.
@@ -47,31 +46,60 @@ def _sources(app: web.Application) -> dict:
     return {name: poller for name, poller in found.items() if poller is not None}
 
 
-async def broadcast(app: web.Application, event: dict) -> None:
+CLIENT_QUEUE_SIZE = 64
+
+
+class Client:
+    """One connected consumer: a bounded outbox drained by its own task."""
+
+    def __init__(self, ws: web.WebSocketResponse) -> None:
+        self.ws = ws
+        self.queue: asyncio.Queue[str] = asyncio.Queue(maxsize=CLIENT_QUEUE_SIZE)
+        self.writer: asyncio.Task | None = None
+
+    async def drain(self) -> None:
+        while True:
+            await self.ws.send_str(await self.queue.get())
+
+    def drop(self) -> None:
+        """Abandons a client that cannot keep up."""
+        if self.writer is not None:
+            self.writer.cancel()
+        asyncio.ensure_future(self.ws.close())
+
+
+def broadcast(app: web.Application, event: dict) -> None:
+    """Queues an event for every client; never waits on the network."""
     payload = json.dumps(event)
-    for ws in list(app[CLIENTS_KEY]):
+    for client in list(app[CLIENTS_KEY]):
         try:
-            await ws.send_str(payload)
-        except (ConnectionError, RuntimeError):
-            app[CLIENTS_KEY].discard(ws)
+            client.queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            log.warning("dropping a client that cannot keep up")
+            app[CLIENTS_KEY].discard(client)
+            client.drop()
 
 
 async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
     app = request.app
-    # Registered only after the initial burst is sent, so a live event
-    # cannot overtake it and arrive out of order.
+    client = Client(ws)
+    # No await between registering and snapshotting, so every later event
+    # lands in the queue after the burst and none is lost or duplicated.
+    app[CLIENTS_KEY].add(client)
     for poller in _sources(app).values():
-        await ws.send_json(poller.status())
-    await ws.send_json({"type": "trails", "aircraft": app[TRAILS_KEY].snapshot()})
-    await ws.send_json(app[LOG_KEY].history())
-    app[CLIENTS_KEY].add(ws)
+        client.queue.put_nowait(json.dumps(poller.status()))
+    snapshot = {"type": "trails", "aircraft": app[TRAILS_KEY].snapshot()}
+    client.queue.put_nowait(json.dumps(snapshot))
+    client.queue.put_nowait(json.dumps(app[LOG_KEY].history()))
+    client.writer = asyncio.create_task(client.drain())
     try:
         async for _ in ws:
             pass  # inbound messages are ignored
     finally:
-        app[CLIENTS_KEY].discard(ws)
+        app[CLIENTS_KEY].discard(client)
+        client.writer.cancel()
     return ws
 
 
@@ -92,7 +120,7 @@ async def statusz(request: web.Request) -> web.Response:
     sources = {}
     for name, poller in _sources(app).items():
         status = poller.status()
-        last_ok = app[LAST_OK_KEY].get(name)
+        last_ok = poller.last_ok
         sources[name] = {
             "available": bool(status.get("available")),
             "contacts": len(status.get(CONTACTS_FIELD[name], [])),
@@ -135,27 +163,28 @@ def make_app(
     app = web.Application()
     app[CLIENTS_KEY] = set()
     app[CLOCK_KEY] = clock
-    app[LAST_OK_KEY] = {}
     app[TASKS_KEY] = []
     app[TRAILS_KEY] = TrailStore()
-    app[LOG_KEY] = EventLog(lambda event: broadcast(app, event), clock)
+
+    async def publish_log(event: dict) -> None:
+        broadcast(app, event)
+
+    app[LOG_KEY] = EventLog(publish_log, clock)
 
     async def on_log(source: str, text: str) -> None:
         await app[LOG_KEY].add(source, text)
 
-    async def publish_adsb(event: dict) -> None:
-        if event.get("available"):
-            app[LAST_OK_KEY]["adsb"] = clock()
-            app[TRAILS_KEY].add(event["aircraft"], clock())
-        await broadcast(app, event)
+    async def publish(event: dict) -> None:
+        broadcast(app, event)
 
-    async def publish_ais(event: dict) -> None:
-        if event.get("available"):
-            app[LAST_OK_KEY]["ais"] = clock()
-        await broadcast(app, event)
+    async def on_adsb_poll(status: dict) -> None:
+        # Every cycle, so trails age out during an outage or a quiet sky.
+        app[TRAILS_KEY].add(status.get("aircraft", []), clock())
 
-    app[ADSB_KEY] = AdsbPoller(publish_adsb, adsb_url, on_log) if adsb_url else None
-    app[AIS_KEY] = AisPoller(publish_ais, ais_url, on_log) if ais_url else None
+    app[ADSB_KEY] = (
+        AdsbPoller(publish, adsb_url, on_log, clock, on_adsb_poll) if adsb_url else None
+    )
+    app[AIS_KEY] = AisPoller(publish, ais_url, on_log, clock) if ais_url else None
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/statusz", statusz)
