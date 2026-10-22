@@ -1,0 +1,21 @@
+{
+  "now": 1790000000.0,
+  "messages": 1000000,
+  "aircraft": [
+    {"hex": "a00001", "flight": "SKW5502 ", "category": "A3", "alt_baro": 12000,
+     "gs": 310.5, "track": 90.0, "lat": 37.82, "lon": -122.38, "seen_pos": 0.4,
+     "seen": 0.2},
+    {"hex": "a00002", "flight": "N123AB  ", "alt_baro": 3500, "gs": 120.0,
+     "track": 270.0, "lat": 37.90, "lon": -122.50, "seen_pos": 1.0, "seen": 0.5},
+    {"hex": "a00003", "flight": "HELI1   ", "category": "A7", "alt_baro": 800,
+     "gs": 80.0, "track": 180.0, "lat": 37.75, "lon": -122.45, "seen_pos": 2.0,
+     "seen": 1.0},
+    {"hex": "a00004", "flight": "UAL100  ", "category": "A3", "alt_baro": "ground",
+     "gs": 5.0, "track": 10.0, "lat": 37.79, "lon": -122.41, "seen_pos": 3.0,
+     "seen": 2.0},
+    {"hex": "a00005", "flight": "STALE1  ", "category": "A3", "alt_baro": 20000,
+     "gs": 400.0, "track": 45.0, "lat": 37.85, "lon": -122.30, "seen_pos": 75,
+     "seen": 70.0},
+    {"hex": "a00006", "category": "A3", "alt_baro": 30000, "seen": 5.0}
+  ]
+}
