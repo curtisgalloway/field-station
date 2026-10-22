@@ -162,6 +162,19 @@ def _poller_died(poller, name: str, task: asyncio.Task) -> None:
     asyncio.ensure_future(poller.mark_down())
 
 
+async def _close_clients(app: web.Application) -> None:
+    """Closes every open WebSocket so consumers see the stop."""
+    clients = list(app[CLIENTS_KEY])
+    app[CLIENTS_KEY].clear()
+    for client in clients:
+        if client.writer is not None:
+            client.writer.cancel()
+    await asyncio.gather(
+        *(client.ws.close(code=1001, message=b"going away") for client in clients),
+        return_exceptions=True,
+    )
+
+
 async def _stop(app: web.Application) -> None:
     for task in app[TASKS_KEY]:
         task.cancel()
@@ -211,6 +224,7 @@ def make_app(
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/statusz", statusz)
     app.on_startup.append(_start)
+    app.on_shutdown.append(_close_clients)
     app.on_cleanup.append(_stop)
     return app
 

@@ -268,6 +268,25 @@ async def test_crashed_poller_marks_source_unavailable(
         await client.close()
 
 
+async def test_shutdown_closes_clients_with_going_away(fake_adsb, fake_ais):
+    client, app = await _client(fake_adsb, fake_ais, Clock(1000.0))
+    try:
+        await _until(lambda: app[app_mod.ADSB_KEY].status()["available"])
+        ws = await client.ws_connect("/ws")
+        await ws.receive_json()
+        stopping = asyncio.create_task(app.shutdown())
+        while True:
+            msg = await asyncio.wait_for(ws.receive(), 5)
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                break
+        await stopping
+        assert msg.type == aiohttp.WSMsgType.CLOSE
+        assert msg.data == 1001
+        assert not app[app_mod.CLIENTS_KEY]
+    finally:
+        await client.close()
+
+
 async def test_failed_socket_drops_client():
     class BrokenWs:
 

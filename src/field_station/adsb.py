@@ -119,7 +119,17 @@ class AdsbPoller:
     async def run(self) -> None:
         async with aiohttp.ClientSession() as session:
             while True:
-                delay = await self._poll_once(session)
+                try:
+                    delay = await self._poll_once(session)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    # A malformed feed (or a failing hook) must never stop
+                    # the source: report it down and try again later.
+                    log.exception("%s poll failed", "adsb")
+                    delay = RETRY_SECONDS
+                    try:
+                        await self.mark_down()
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        log.exception("%s could not publish its outage", "adsb")
                 await asyncio.sleep(delay)
 
     async def _fetch_receiver(self, session: aiohttp.ClientSession) -> None:

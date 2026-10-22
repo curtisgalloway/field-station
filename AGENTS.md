@@ -17,7 +17,8 @@ env (`FIELD_STATION_ADSB_URL`, `FIELD_STATION_AIS_URL`); there are no
 default URLs in code. `tests/test_privacy.py` scans tracked file names and contents for private addresses and home paths, and for private terms read from an untracked file (`FIELD_STATION_PRIVATE_TERMS`, default `~/.config/field-station/private-terms`; skipped if absent). Never put those terms in the repo.
 
 The feed never carries bearing or distance from the receiver, nor the
-receiver's position (`receiver.json` is read for ranking and log text only).
+receiver's position (`receiver.json` is read for ranking only; log text
+carries no distances).
 
 ## Polling
 
@@ -30,8 +31,9 @@ receiver's position (`receiver.json` is read for ranking and log text only).
 
 ## Consumer contract
 
-The contract with consumers is the event shapes defined in Task 5 of the
-implementation plan.
+The contract with consumers is the event shapes documented in the README's
+"Feed contract" section. Change that section in the same commit as any change
+to an event shape.
 
 ## Conventions
 
