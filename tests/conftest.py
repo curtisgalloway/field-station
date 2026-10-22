@@ -70,3 +70,15 @@ async def fake_adsb(aircraft_fixture, receiver_fixture):
     )
     yield fake
     await fake.server.close()
+
+
+@pytest.fixture
+def ships_fixture() -> dict:
+    return json.loads((FIXTURES / "ships.json").read_text())
+
+
+@pytest_asyncio.fixture
+async def fake_ais(ships_fixture):
+    fake = await start_fake_receiver({"/data/ships.json": ships_fixture})
+    yield fake
+    await fake.server.close()

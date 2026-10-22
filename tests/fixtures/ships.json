@@ -1,0 +1,12 @@
+{
+  "count": 6,
+  "error": false,
+  "ships": [
+    {"mmsi": 366000001, "shipname": "SAMPLE CARGO", "shipclass": 2, "lat": 37.81, "lon": -122.42, "distance": 1.5, "bearing": 300, "speed": 12.4, "cog": 90.0, "heading": 88, "last_signal": 4},
+    {"mmsi": 366000002, "shipname": "SAMPLE SLOOP  ", "shipclass": 3, "lat": 37.79, "lon": -122.39, "distance": 0.8, "bearing": 120, "speed": 5.1, "cog": 200.5, "heading": null, "last_signal": 12},
+    {"mmsi": 366000003, "shipname": "SAMPLE TRAWLER", "shipclass": 8, "lat": 37.82, "lon": -122.45, "distance": 2.6, "bearing": 290, "speed": 3.0, "cog": 10.0, "heading": 12, "last_signal": 30},
+    {"mmsi": 993000004, "shipname": "SAMPLE BUOY", "shipclass": 12, "lat": 37.805, "lon": -122.41, "distance": 0.5, "bearing": 330, "speed": 0.0, "cog": 0.0, "heading": null, "last_signal": 60},
+    {"mmsi": 366000005, "shipname": "SAMPLE STATIC ONLY", "shipclass": 2, "lat": null, "lon": null, "distance": null, "bearing": null, "speed": null, "cog": null, "heading": null, "last_signal": 200},
+    {"mmsi": 366000006, "shipname": "", "shipclass": 3, "lat": 37.78, "lon": -122.38, "distance": 1.2, "bearing": 150, "speed": 0.1, "cog": 45.0, "heading": null, "last_signal": 8}
+  ]
+}
