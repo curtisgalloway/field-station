@@ -24,6 +24,31 @@ def test_kinds(ships_fixture):
     assert ais.reduce_ships(absent)[0][0]["kind"] == "commercial"
 
 
+def _entry(**fields) -> dict:
+    base = {"mmsi": 7, "shipclass": 2, "lat": 37.8, "lon": -122.4, "distance": 1}
+    base.update(fields)
+    return base
+
+
+def test_null_island_dropped():
+    contacts, total = ais.reduce_ships({"ships": [_entry(lat=0, lon=0)]})
+    assert contacts == []
+    assert total == 1
+
+
+def test_bool_position_dropped():
+    contacts, _ = ais.reduce_ships({"ships": [_entry(lat=True), _entry(lon=False)]})
+    assert contacts == []
+
+
+def test_missing_distance_dropped():
+    ships = [_entry(distance=None), _entry(mmsi=8, distance=None)]
+    del ships[1]["distance"]
+    contacts, total = ais.reduce_ships({"ships": ships})
+    assert contacts == []
+    assert total == 2
+
+
 def test_total_excludes_marks(ships_fixture):
     _, total = ais.reduce_ships(ships_fixture)
     assert total == 5
@@ -36,8 +61,16 @@ def test_absolute_fields(ships_fixture):
     assert first["lat"] == 37.805
     assert first["lon"] == -122.41
     assert set(first) == {
-      "mmsi", "name", "sog_kt", "cog", "heading", "lat", "lon", "seen_s", "kind",
-  }  # fmt: skip
+        "mmsi",
+        "name",
+        "sog_kt",
+        "cog",
+        "heading",
+        "lat",
+        "lon",
+        "seen_s",
+        "kind",
+    }
     by_mmsi = {c["mmsi"]: c for c in contacts}
     assert by_mmsi[366000002]["name"] == "SAMPLE SLOOP"
     assert by_mmsi[366000006]["name"] is None

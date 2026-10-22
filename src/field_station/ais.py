@@ -72,8 +72,11 @@ VESSEL_KINDS = frozenset({"commercial", "working", "pleasure"})
 def _located(entry: dict) -> tuple[float, float] | None:
     """Returns (lat, lon) when the entry carries a usable position."""
     lat, lon = entry.get("lat"), entry.get("lon")
-    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-        return None
+    for value in (lat, lon):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+    if lat == 0 and lon == 0:
+        return None  # a transponder with no fix reports null island
     if not -90.0 <= lat <= 90.0 or not -180.0 <= lon <= 180.0:
         return None
     return lat, lon
@@ -91,6 +94,8 @@ def _rank_ships(data: dict) -> tuple[list[tuple[float, dict]], int]:
         if position is None:
             continue  # static data only -- heard, but never located
         distance = entry.get("distance")
+        if isinstance(distance, bool) or not isinstance(distance, (int, float)):
+            continue  # unranked entries are dropped, as the terminal did
         contact = {
             "mmsi": entry.get("mmsi"),
             "name": (entry.get("shipname") or "").strip() or None,
@@ -102,7 +107,7 @@ def _rank_ships(data: dict) -> tuple[list[tuple[float, dict]], int]:
             "seen_s": entry.get("last_signal"),
             "kind": kind,
         }
-        ranked.append((distance if distance is not None else float("inf"), contact))
+        ranked.append((distance, contact))
     ranked.sort(key=lambda pair: pair[0])
     # AIS-catcher's own "count" spans a longer-lived vessel database than
     # the list it serves here; the list is what the screen can actually
