@@ -93,3 +93,24 @@ JSON: `{"sources": {"adsb": {"available": bool, "contacts": int,
 is the time since the last successful poll, or null if there has been none.
 
 Licensed under Apache 2.0.
+
+## Spotter API
+
+An optional ranking of every contact heard, with a history, served over a
+token-protected HTTP API separate from the feed above (the feed is
+unchanged and still carries no distance or bearing). The design, scoring
+rules and endpoint fields are in [docs/spotter.md](docs/spotter.md).
+
+- `GET /spotter/current` - the current pick and its change sequence number
+- `GET /spotter/history` - past sightings, best-scoring or newest first
+- `GET /spotter/counts` - distinct contacts per type group
+
+Every request needs `Authorization: Bearer <token>`, with the token set in
+`FIELD_STATION_SPOTTER_TOKEN`. With no token set, `/spotter/*` answers 503;
+a wrong or missing token gets 401. History is kept in a SQLite file named
+by `--spotter-db` (env `FIELD_STATION_SPOTTER_DB`); without one the spotter
+runs in memory and the history endpoints answer 503. In a container, mount
+a volume and point the database at it (for example
+`FIELD_STATION_SPOTTER_DB=/data/spotter.db`). `--spotter-quiet` (default
+`22:00-07:00`) and `--spotter-tz` (default `America/Los_Angeles`) set when
+the pick never changes.

@@ -19,12 +19,17 @@ import json
 import logging
 import os
 import time
+import zoneinfo
 
 from aiohttp import web
 
 from field_station.adsb import AdsbPoller
 from field_station.ais import AisPoller
 from field_station.eventlog import EventLog
+from field_station.spotter import api as spotter_api
+from field_station.spotter import schedule as spotter_schedule
+from field_station.spotter import service as spotter_service
+from field_station.spotter import store as spotter_store
 from field_station.trails import TrailStore
 
 log = logging.getLogger("field_station.app")
@@ -36,6 +41,10 @@ LOG_KEY = web.AppKey("log", EventLog)
 CLIENTS_KEY = web.AppKey("clients", set)
 CLOCK_KEY = web.AppKey("clock", object)
 TASKS_KEY = web.AppKey("tasks", list)
+
+# Spotter defaults (docs/spotter.md).
+DEFAULT_QUIET = "22:00-07:00"
+DEFAULT_TZ = "America/Los_Angeles"
 
 # Event field that holds each source's contact list.
 CONTACTS_FIELD = {"adsb": "aircraft", "ais": "vessels"}
@@ -152,6 +161,10 @@ async def _start(app: web.Application) -> None:
         task = asyncio.create_task(poller.run())
         task.add_done_callback(functools.partial(_poller_died, poller, name))
         app[TASKS_KEY].append(task)
+    spotter = app[spotter_api.SPOTTER_KEY]
+    if spotter is not None:
+        await asyncio.to_thread(spotter.load)
+        app[TASKS_KEY].append(asyncio.create_task(spotter.run()))
 
 
 def _poller_died(poller, name: str, task: asyncio.Task) -> None:
@@ -181,12 +194,17 @@ async def _stop(app: web.Application) -> None:
     for task in app[TASKS_KEY]:
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await task
+    spotter = app[spotter_api.SPOTTER_KEY]
+    if spotter is not None:
+        spotter.close()
 
 
 def make_app(
     adsb_url: str | None,
     ais_url: str | None,
     clock: Callable[[], float] = time.time,
+    spotter: spotter_service.Spotter | None = None,
+    spotter_token: str | None = None,
 ) -> web.Application:
     """Builds the service.
 
@@ -194,6 +212,8 @@ def make_app(
       adsb_url: URL of the receiver's aircraft.json, or None for no ADS-B.
       ais_url: URL of the receiver's ships.json, or None for no AIS.
       clock: Returns epoch seconds; used for trails, log entries and status.
+      spotter: The spotter to feed with the full receiver documents, or None.
+      spotter_token: Bearer token for ``/spotter/*``; unset answers 503.
     """
     app = web.Application()
     app[CLIENTS_KEY] = set()
@@ -216,10 +236,20 @@ def make_app(
         # Every cycle, so trails age out during an outage or a quiet sky.
         app[TRAILS_KEY].add(status.get("aircraft", []), clock())
 
+    app[spotter_api.SPOTTER_KEY] = spotter
+    app[spotter_api.TOKEN_KEY] = spotter_token or ""
+    adsb_tap = spotter.observe_aircraft if spotter is not None else None
+    ais_tap = spotter.observe_ships if spotter is not None else None
+
     app[ADSB_KEY] = (
-        AdsbPoller(publish, adsb_url, on_log, clock, on_adsb_poll) if adsb_url else None
+        AdsbPoller(publish, adsb_url, on_log, clock, on_adsb_poll, adsb_tap)
+        if adsb_url
+        else None
     )
-    app[AIS_KEY] = AisPoller(publish, ais_url, on_log, clock) if ais_url else None
+    app[AIS_KEY] = (
+        AisPoller(publish, ais_url, on_log, clock, None, ais_tap) if ais_url else None
+    )
+    spotter_api.add_routes(app)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/healthz", healthz)
     app.router.add_get("/statusz", statusz)
@@ -243,11 +273,43 @@ def main(argv: list[str] | None = None) -> None:
         default=os.environ.get("FIELD_STATION_AIS_URL"),
         help="ships.json URL (env FIELD_STATION_AIS_URL); omit to disable",
     )
+    parser.add_argument(
+        "--spotter-db",
+        default=os.environ.get("FIELD_STATION_SPOTTER_DB"),
+        help="spotter history SQLite file (env FIELD_STATION_SPOTTER_DB); "
+        "omit to keep the spotter in memory only",
+    )
+    parser.add_argument(
+        "--spotter-quiet",
+        default=os.environ.get("FIELD_STATION_SPOTTER_QUIET", DEFAULT_QUIET),
+        help="daily HH:MM-HH:MM window when the pick never changes "
+        "(env FIELD_STATION_SPOTTER_QUIET; default %(default)s)",
+    )
+    parser.add_argument(
+        "--spotter-tz",
+        default=os.environ.get("FIELD_STATION_SPOTTER_TZ", DEFAULT_TZ),
+        help="time zone of the quiet hours (env FIELD_STATION_SPOTTER_TZ; "
+        "default %(default)s)",
+    )
     args = parser.parse_args(argv)
     if not args.adsb_url and not args.ais_url:
         parser.error("give at least one of --adsb-url / --ais-url")
+    token = os.environ.get("FIELD_STATION_SPOTTER_TOKEN") or None
+    spotter = None
+    if token or args.spotter_db:
+        try:
+            quiet = spotter_schedule.QuietHours.parse(args.spotter_quiet)
+            tz = zoneinfo.ZoneInfo(args.spotter_tz)
+        except (ValueError, zoneinfo.ZoneInfoNotFoundError) as err:
+            parser.error(str(err))
+        store = spotter_store.Store(args.spotter_db) if args.spotter_db else None
+        spotter = spotter_service.Spotter(store, quiet, tz)
     logging.basicConfig(level=logging.INFO)
-    web.run_app(make_app(args.adsb_url, args.ais_url), host=args.host, port=args.port)
+    web.run_app(
+        make_app(args.adsb_url, args.ais_url, spotter=spotter, spotter_token=token),
+        host=args.host,
+        port=args.port,
+    )
 
 
 if __name__ == "__main__":

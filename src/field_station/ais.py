@@ -141,10 +141,17 @@ class AisPoller:
     """Polls ships.json and publishes {"type": "ais", ...} events."""
 
     def __init__(
-        self, publish, url: str, on_log=None, clock=time.time, on_poll=None
+        self,
+        publish,
+        url: str,
+        on_log=None,
+        clock=time.time,
+        on_poll=None,
+        on_document=None,
     ) -> None:
         self._clock = clock
         self._on_poll = on_poll
+        self._on_document = on_document
         self.last_ok: float | None = None  # clock time of last good poll
         self._publish = publish
         self._url = url
@@ -185,6 +192,7 @@ class AisPoller:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
             ranked, total = _rank_ships(data)
+            self._tap(data)
         except (
             aiohttp.ClientError,
             asyncio.TimeoutError,
@@ -208,6 +216,19 @@ class AisPoller:
             }
         )
         return POLL_ACTIVE_SECONDS if contacts else POLL_IDLE_SECONDS
+
+    def _tap(self, data: dict) -> None:
+        """Hands the full parsed document to the document hook, if any.
+
+        The hook sees every ship and field, before the feed's cap. It must
+        never disturb the feed, so its failures are logged and swallowed.
+        """
+        if self._on_document is None:
+            return
+        try:
+            self._on_document(data)
+        except Exception:  # pylint: disable=broad-exception-caught
+            log.exception("document hook failed")
 
     async def _log_new_vessels(self, ranked: list[tuple[float, dict]]) -> None:
         """Log vessels appearing on the scope (not every position tick).

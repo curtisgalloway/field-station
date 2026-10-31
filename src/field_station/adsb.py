@@ -100,10 +100,17 @@ class AdsbPoller:
     """Polls aircraft.json and publishes {"type": "adsb", ...} events."""
 
     def __init__(
-        self, publish, url: str, on_log=None, clock=time.time, on_poll=None
+        self,
+        publish,
+        url: str,
+        on_log=None,
+        clock=time.time,
+        on_poll=None,
+        on_document=None,
     ) -> None:
         self._clock = clock
         self._on_poll = on_poll
+        self._on_document = on_document
         self.last_ok: float | None = None  # clock time of last good poll
         self._publish = publish
         self._url = url
@@ -159,6 +166,7 @@ class AdsbPoller:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
             contacts = reduce_aircraft(data, self._receiver)
+            self._tap(data)
         except (
             aiohttp.ClientError,
             asyncio.TimeoutError,
@@ -190,6 +198,19 @@ class AdsbPoller:
             }
         )
         return POLL_ACTIVE_SECONDS if contacts else POLL_IDLE_SECONDS
+
+    def _tap(self, data: dict) -> None:
+        """Hands the full parsed document to the document hook, if any.
+
+        The hook sees every aircraft and field, before the feed's caps. It must
+        never disturb the feed, so its failures are logged and swallowed.
+        """
+        if self._on_document is None:
+            return
+        try:
+            self._on_document(data, self._receiver)
+        except Exception:  # pylint: disable=broad-exception-caught
+            log.exception("document hook failed")
 
     async def _log_new_contacts(self, contacts: list[dict]) -> None:
         """Log contacts appearing in view (not every position tick)."""
