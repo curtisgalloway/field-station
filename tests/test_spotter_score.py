@@ -133,7 +133,7 @@ def test_vessel_length_rarity_closeness():
     assert sc(helpers.vessel(dist=0.0)).score == 15
     hist = table_lib.TypeHistory({"2026-10-31": {"ship:37": 99, "ship:35": 1}})
     r = sc(helpers.vessel(shiptype=35), history=hist)
-    assert r.score == 90 and "rare type: 35" in r.reasons
+    assert r.score == 90 and "rare type: military" in r.reasons
 
 
 def test_rank_orders_and_penalizes_repeats():

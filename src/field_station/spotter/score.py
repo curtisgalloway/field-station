@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from field_station.spotter import model
+from field_station.spotter import names
 from field_station.spotter import table as table_lib
 
 RARITY_MAX = 30.0
@@ -147,7 +148,9 @@ def _score_vessel(
     rare = rarity_points(table_lib.type_key(s), history)
     if rare > 0:
         score += rare
-        reasons.append((rare, f"rare type: {shiptype}"))
+        reasons.append(
+            (rare, f"rare type: {names.ship_type_name(shiptype) or shiptype}")
+        )
     close = closeness_points(s.distance_nm)
     if close > 0:
         score += close
