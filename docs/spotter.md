@@ -50,23 +50,27 @@ Aircraft: emergency or squawk 7500/7600/7700 +100; `dbFlags`
 bit 1 (military) +60; bit 2 (interesting) +40; category B* +35; A7 +25;
 `year` before 1980 +30; A5 +15; rare in the world +40 (the hand-kept list in
 `spotter/world_rare.py`: outsized freighters, low-production military types,
-historic aircraft still flying); type rarity up to +30; closeness up to +15
+historic aircraft still flying); type rarity up to +60; closeness up to +15
 (under 5 nm and at or below 5000 ft); no type information −10.
 
 Vessels: ship type 35 military +60; 51 search and rescue +40; 55 law
 enforcement +35; 58 medical +30; 33/34 +25; 31/32 +20; 60–69 +20; 52 +15;
-70–89 +15; length over 150 m +25; 36/37 +5; type rarity up to +30;
+70–89 +15; length over 150 m +25; 36/37 +5; type rarity up to +60;
 closeness up to +15.
 
 Any contact that was the pick in the last 24 h: −50.
 
-Type rarity means "rarely seen here", not rare in the world: linear from +30
-at 2 or fewer contacts in the last 7 days to 0 at 20 or more, and off until
-the history holds 20 contacts. Aircraft are counted by family
+Type rarity is the base of the score and means "rarely seen here", not rare
+in the world (that is the separate +40 list). It is the family's typical rate
+at this receiver, per week, from up to 90 days of history, worth up to +60 on
+a log scale: none at weekly or more, about half at monthly, full at about
+once in four months or less, or never. The sighting being scored is left out
+of its own count, and the rate divides by the days the history covers. Off
+until the history holds 20 contacts. Aircraft are counted by family
 (`spotter/families.py`: all Cessna singles, all 737s, all Cirrus and so on;
 an unlisted type code is its own family), vessels by `ship:<shiptype>`. The
-history itself stays keyed by exact type code. The reason reads
-"rarely seen here: <family or ship type>, N× in 7 days".
+history itself stays keyed by exact type code. The reason reads "rarely seen
+here: <family>, about 2 a month" or "none in the last N days".
 
 ## Choosing when the pick changes
 
