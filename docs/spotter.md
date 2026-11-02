@@ -58,9 +58,13 @@ closeness up to +15.
 
 Any contact that was the pick in the last 24 h: −50.
 
-Type rarity: linear from +30 at or below 1 % of the last 7 days' sightings to
-0 at 10 % or more, counted by aircraft type code or `ship:<shiptype>`, and
-off until 20 sightings exist.
+Type rarity means "rarely seen here", not rare in the world: linear from +30
+at 2 or fewer contacts in the last 7 days to 0 at 20 or more, and off until
+the history holds 20 contacts. Aircraft are counted by family
+(`spotter/families.py`: all Cessna singles, all 737s, all Cirrus and so on;
+an unlisted type code is its own family), vessels by `ship:<shiptype>`. The
+history itself stays keyed by exact type code. The reason reads
+"rarely seen here: <family or ship type>, N× in 7 days".
 
 ## Choosing when the pick changes
 

@@ -50,6 +50,12 @@ class TypeHistory:
     def count(self, key: str) -> int:
         return sum(day.get(key, 0) for day in self.days.values())
 
+    def count_where(self, keep) -> int:
+        """Sightings whose type key satisfies `keep(key)`."""
+        return sum(
+            n for day in self.days.values() for key, n in day.items() if keep(key)
+        )
+
     def total(self) -> int:
         return sum(sum(day.values()) for day in self.days.values())
 

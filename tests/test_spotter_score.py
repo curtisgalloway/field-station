@@ -58,13 +58,26 @@ def test_no_type_info_penalty():
 
 def test_rarity_aircraft():
     r = sc(helpers.aircraft(t="B52"), history=history())
-    assert r.score == 30 and r.reasons == ["rare type: B52"]
+    assert r.score == 30 and r.reasons == ["rarely seen here: B52, 1\u00d7 in 7 days"]
     assert sc(helpers.aircraft(t="B738"), history=history()).score == 0
 
 
-def test_rarity_is_linear_between_one_and_ten_percent():
-    hist = table_lib.TypeHistory({"2026-10-31": {"X": 55, "Y": 945}})
+def test_rarity_is_linear_between_two_and_twenty_contacts():
+    hist = table_lib.TypeHistory({"2026-10-31": {"X": 11, "Y": 945}})
     assert score.rarity_points("X", hist) == pytest.approx(15.0)
+    hist = table_lib.TypeHistory({"2026-10-31": {"X": 2, "Y": 945}})
+    assert score.rarity_points("X", hist) == 30
+    hist = table_lib.TypeHistory({"2026-10-31": {"X": 20, "Y": 945}})
+    assert score.rarity_points("X", hist) == 0
+
+
+def test_rarity_counts_the_whole_family():
+    hist = table_lib.TypeHistory(
+        {"2026-10-31": {"C172": 58, "C182": 1, "C25B": 1, "B738": 100}}
+    )
+    assert score.rarity_points("C182", hist) == 0  # 59 Cessna singles
+    r = sc(helpers.aircraft(t="C25B"), history=hist)
+    assert r.reasons == ["rarely seen here: Citation jets, 1\u00d7 in 7 days"]
 
 
 def test_rarity_needs_enough_history():
@@ -120,7 +133,8 @@ def test_vessel_length_rarity_closeness():
     assert sc(helpers.vessel(dist=0.0)).score == 15
     hist = table_lib.TypeHistory({"2026-10-31": {"ship:37": 99, "ship:35": 1}})
     r = sc(helpers.vessel(shiptype=35), history=hist)
-    assert r.score == 90 and "rare type: military" in r.reasons
+    assert r.score == 90
+    assert "rarely seen here: military, 1\u00d7 in 7 days" in r.reasons
 
 
 def test_rank_orders_and_penalizes_repeats():

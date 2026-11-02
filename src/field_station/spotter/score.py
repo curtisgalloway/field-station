@@ -4,14 +4,15 @@
 
 from __future__ import annotations
 
+from field_station.spotter import families
 from field_station.spotter import model
 from field_station.spotter import names
 from field_station.spotter import table as table_lib
 
 RARITY_MAX = 30.0
 RARITY_MIN_TOTAL = 20
-RARE_SHARE = 0.01
-COMMON_SHARE = 0.10
+RARE_COUNT = 2  # contacts in 7 days at or below which rarity is full
+COMMON_COUNT = 20  # contacts in 7 days at or above which it is none
 CLOSE_NM = 5.0
 CLOSE_MAX = 15.0
 LOW_ALT_FT = 5000
@@ -36,13 +37,32 @@ _SHIP_TYPES = {
 Reasons = list[tuple[float, str]]
 
 
+def seen_count(type_id: str, history: table_lib.TypeHistory) -> int:
+    """Contacts in the 7-day history of this type's family (or ship type)."""
+    if type_id.startswith("ship:"):
+        return history.count(type_id)
+    fam = families.family(type_id)
+    return history.count_where(
+        lambda key: not key.startswith("ship:") and families.family(key) == fam
+    )
+
+
 def rarity_points(type_id: str | None, history: table_lib.TypeHistory | None) -> float:
-    """Returns 0..30; full marks at or below 1% of the 7-day sightings, none at 10%+."""
+    """Returns 0..30: how rarely this family is seen here, not rarity in the world.
+
+    Full marks at 2 or fewer contacts of the family in the last 7 days, none at
+    20 or more, linear between; off until the history holds 20 contacts.
+    """
     if not type_id or history is None or history.total() < RARITY_MIN_TOTAL:
         return 0.0
-    share = history.count(type_id) / history.total()
-    frac = (COMMON_SHARE - share) / (COMMON_SHARE - RARE_SHARE)
+    count = seen_count(type_id, history)
+    frac = (COMMON_COUNT - count) / (COMMON_COUNT - RARE_COUNT)
     return RARITY_MAX * min(1.0, max(0.0, frac))
+
+
+def rarity_reason(label: str, type_id: str, history: table_lib.TypeHistory) -> str:
+    count = seen_count(type_id, history)
+    return f"rarely seen here: {label}, {count}\u00d7 in 7 days"
 
 
 def closeness_points(distance_nm: float | None) -> float:
@@ -110,7 +130,7 @@ def _score_aircraft(
         rare = rarity_points(tcode, history)
         if rare > 0:
             score += rare
-            reasons.append((rare, f"rare type: {tcode}"))
+            reasons.append((rare, rarity_reason(families.family(tcode), tcode, history)))
     if _is_low(raw):
         close = closeness_points(s.distance_nm)
         if close > 0:
@@ -140,12 +160,12 @@ def _score_vessel(
     if length is not None and length > 150:
         score += 25
         reasons.append((25, f"large: {length} m"))
-    rare = rarity_points(table_lib.type_key(s), history)
+    tkey = table_lib.type_key(s)
+    rare = rarity_points(tkey, history)
     if rare > 0:
         score += rare
-        reasons.append(
-            (rare, f"rare type: {names.ship_type_name(shiptype) or shiptype}")
-        )
+        label = names.ship_type_name(shiptype) or str(shiptype)
+        reasons.append((rare, rarity_reason(label, tkey, history)))
     close = closeness_points(s.distance_nm)
     if close > 0:
         score += close
