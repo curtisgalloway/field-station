@@ -165,8 +165,10 @@ class Spotter:
         quiet: schedule.QuietHours,
         tz: zoneinfo.ZoneInfo,
         clock=time.time,
+        seed_path: str | None = None,
     ) -> None:
         self.store = store
+        self.seed_path = seed_path
         self.quiet = quiet
         self.tz = tz
         self._clock = clock
@@ -176,7 +178,50 @@ class Spotter:
         self.pick: dict | None = None
 
     def load(self) -> None:
-        """Restores the pick, the no-repeat marks and type counts from the store."""
+        """Restores the pick, the no-repeat marks and type counts from the store.
+
+        Then adds the seed file's type counts, if one is configured.
+        """
+        try:
+            self._load_store()
+        finally:
+            self._load_seed()
+
+    def _load_seed(self) -> None:
+        """Adds estimated past type counts from the seed file.
+
+        The seed (built from a public ADS-B archive, weighted by how likely
+        this receiver was to hear each aircraft) fills days before our own
+        history begins. A day the store already has is never overwritten, so
+        real sightings always win.
+        """
+        if not self.seed_path:
+            return
+        try:
+            with open(self.seed_path, encoding="utf-8") as fh:
+                seed = json.load(fh)
+            days = seed["days"]
+            if not isinstance(days, dict):
+                raise TypeError("seed 'days' is not an object")
+        except FileNotFoundError:
+            log.info("no spotter seed at %s", self.seed_path)
+            return
+        except (OSError, ValueError, KeyError, TypeError):
+            log.exception("could not read spotter seed %s; ignoring it", self.seed_path)
+            return
+        history = self.table.history
+        added = 0
+        for day, counts in days.items():
+            if day in history.days or not isinstance(counts, dict):
+                continue
+            history.days[day] = {
+                str(k): float(v) for k, v in counts.items() if isinstance(v, (int, float))
+            }
+            added += 1
+        history.prune(self._clock())
+        log.info("spotter seed: added %d days from %s", added, self.seed_path)
+
+    def _load_store(self) -> None:
         if self.store is None:
             return
         now = self._clock()

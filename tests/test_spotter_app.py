@@ -381,3 +381,34 @@ async def test_api_ranked(tmp_path, aircraft_fixture, ships_fixture):
         assert resp.status == 400
     finally:
         await client.close()
+
+
+def _seed(tmp_path, days):
+    path = tmp_path / "seed.json"
+    path.write_text(json.dumps({"source": "test", "days": days}))
+    return str(path)
+
+
+def test_seed_fills_days_before_our_history(tmp_path):
+    clock = Clock(noon())
+    today = datetime.datetime.fromtimestamp(noon(), datetime.timezone.utc).date()
+    old = (today - datetime.timedelta(days=30)).isoformat()
+    ancient = (today - datetime.timedelta(days=200)).isoformat()
+    seed = _seed(
+        tmp_path,
+        {old: {"C172": 12.5}, today.isoformat(): {"C172": 999}, ancient: {"X": 1}},
+    )
+    spotter = service.Spotter(None, QUIET, TZ, clock, seed_path=seed)
+    spotter.table.history.days[today.isoformat()] = {"C172": 3}
+    spotter.load()
+    days = spotter.table.history.days
+    assert days[old] == {"C172": 12.5}
+    assert days[today.isoformat()] == {"C172": 3}  # our own day wins
+    assert ancient not in days  # older than the 90-day window
+
+
+def test_missing_or_broken_seed_is_ignored(tmp_path):
+    for path in (str(tmp_path / "none.json"), _seed(tmp_path, None)):
+        spotter = service.Spotter(None, QUIET, TZ, Clock(noon()), seed_path=path)
+        spotter.load()
+        assert spotter.table.history.days == {}

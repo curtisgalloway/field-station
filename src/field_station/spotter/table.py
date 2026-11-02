@@ -36,8 +36,10 @@ def _day(ts: float) -> str:
 class TypeHistory:
     """Per-day counts of distinct sightings by type, kept for 90 days."""
 
-    def __init__(self, days: dict[str, dict[str, int]] | None = None) -> None:
-        self.days: dict[str, dict[str, int]] = days or {}
+    def __init__(self, days: dict[str, dict[str, float]] | None = None) -> None:
+        # Counts are whole numbers from our own sightings, and fractional for
+        # days filled from the seed file (expected contacts, not observed).
+        self.days: dict[str, dict[str, float]] = days or {}
 
     def record(self, key: str, now: float) -> None:
         day = self.days.setdefault(_day(now), {})
@@ -47,10 +49,10 @@ class TypeHistory:
         cutoff = _day(now - HISTORY_DAYS * 24 * 3600)
         self.days = {d: c for d, c in self.days.items() if d > cutoff}
 
-    def count(self, key: str) -> int:
+    def count(self, key: str) -> float:
         return sum(day.get(key, 0) for day in self.days.values())
 
-    def count_where(self, keep) -> int:
+    def count_where(self, keep) -> float:
         """Sightings whose type key satisfies `keep(key)`."""
         return sum(
             n for day in self.days.values() for key, n in day.items() if keep(key)
@@ -64,7 +66,7 @@ class TypeHistory:
         last = datetime.date.fromisoformat(max(self.days))
         return (last - first).days + 1
 
-    def total(self) -> int:
+    def total(self) -> float:
         return sum(sum(day.values()) for day in self.days.values())
 
 

@@ -72,6 +72,14 @@ an unlisted type code is its own family), vessels by `ship:<shiptype>`. The
 history itself stays keyed by exact type code. The reason reads "rarely seen
 here: <family>, about 2 a month" or "none in the last N days".
 
+Seed history: `--spotter-seed` / `FIELD_STATION_SPOTTER_SEED` names a JSON
+file `{"days": {"YYYY-MM-DD": {"<type code>": count}}}` of estimated past
+contacts, loaded at startup into the type history for days the database does
+not have (our own sightings always win; days older than 90 are dropped). A
+missing file is skipped. The spotter renderer project builds it from the
+adsb.lol daily archive (ODbL), weighting each aircraft by how likely this
+receiver was to hear it, so rarity has a full 90 days from the first day.
+
 ## Choosing when the pick changes
 
 Checked every minute:

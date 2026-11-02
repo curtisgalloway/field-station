@@ -280,6 +280,12 @@ def main(argv: list[str] | None = None) -> None:
         "omit to keep the spotter in memory only",
     )
     parser.add_argument(
+        "--spotter-seed",
+        default=os.environ.get("FIELD_STATION_SPOTTER_SEED"),
+        help="JSON file of estimated past type counts for rarity "
+        "(env FIELD_STATION_SPOTTER_SEED); a missing file is skipped",
+    )
+    parser.add_argument(
         "--spotter-quiet",
         default=os.environ.get("FIELD_STATION_SPOTTER_QUIET", DEFAULT_QUIET),
         help="daily HH:MM-HH:MM window when the pick never changes "
@@ -303,7 +309,9 @@ def main(argv: list[str] | None = None) -> None:
         except (ValueError, zoneinfo.ZoneInfoNotFoundError) as err:
             parser.error(str(err))
         store = spotter_store.Store(args.spotter_db) if args.spotter_db else None
-        spotter = spotter_service.Spotter(store, quiet, tz)
+        spotter = spotter_service.Spotter(
+            store, quiet, tz, seed_path=args.spotter_seed
+        )
     logging.basicConfig(level=logging.INFO)
     web.run_app(
         make_app(args.adsb_url, args.ais_url, spotter=spotter, spotter_token=token),
