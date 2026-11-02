@@ -103,6 +103,13 @@ answers 503. Wrong or missing token: 401.
 | `score` | number |
 | `reasons` | list of strings, most points first |
 
+### `GET /spotter/ranked`
+
+`{"sightings": [{...}, ...]}`: the best sightings in the table right now,
+best first, as the pick is scored (repeat penalty included). Each entry has
+the pick's fields. `limit` (default 10, at most 25). A display uses it to
+fall back to the next contact when it cannot show the pick.
+
 ### `GET /spotter/history`
 
 Query: `since` (epoch s, required), `until`, `kind`, `type_code`,

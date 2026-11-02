@@ -211,6 +211,16 @@ class Spotter:
     def current(self) -> dict:
         return {"seq": self.seq, "changed_at": self.changed_at, "pick": self.pick}
 
+    def ranked(self, limit: int = 10) -> list[dict]:
+        """The best sightings right now, best first, scored as the pick is.
+
+        Lets a display skip a pick it cannot show (no photo) and fall back to
+        the next one down.
+        """
+        now = self._clock()
+        scored = score_lib.rank(self.table, now)[:limit]
+        return [fields(x.sighting, x.score, x.reasons) for x in scored]
+
     async def tick(self) -> schedule.Decision:
         """Stores what changed and decides whether the pick changes."""
         now = self._clock()

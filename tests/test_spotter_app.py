@@ -208,6 +208,7 @@ async def test_api_auth(tmp_path):
         try:
             for path in (
                 "/spotter/current",
+                "/spotter/ranked",
                 "/spotter/history?since=0",
                 "/spotter/counts?since=0&group=type_code",
             ):
@@ -359,3 +360,24 @@ async def test_feed_output_unchanged_with_spotter_enabled(
     for text in tapped:
         for forbidden in ("distance", "bearing", "score", "reasons"):
             assert forbidden not in text
+
+
+async def test_api_ranked(tmp_path, aircraft_fixture, ships_fixture):
+    spotter = make_spotter(tmp_path, Clock(noon()))
+    air, ships = typed(aircraft_fixture, ships_fixture)
+    spotter.observe_aircraft(air, RECEIVER)
+    spotter.observe_ships(ships)
+    await spotter.tick()
+    app = app_mod.make_app(None, None, spotter=spotter, spotter_token=TOKEN)
+    client = await started(app)
+    try:
+        resp = await client.get("/spotter/ranked?limit=3", headers=AUTH)
+        got = (await resp.json())["sightings"]
+        assert resp.status == 200 and len(got) == 3
+        scores = [s["score"] for s in got]
+        assert scores == sorted(scores, reverse=True)
+        assert {"kind", "key", "score", "reasons"} <= set(got[0])
+        resp = await client.get("/spotter/ranked?limit=x", headers=AUTH)
+        assert resp.status == 400
+    finally:
+        await client.close()

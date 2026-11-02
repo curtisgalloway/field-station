@@ -56,6 +56,24 @@ async def current(request: web.Request) -> web.Response:
     return web.json_response(spotter.current())
 
 
+RANKED_MAX = 25
+
+
+async def ranked(request: web.Request) -> web.Response:
+    refusal = authorize(request)
+    if refusal is not None:
+        return refusal
+    spotter = _spotter(request)
+    if spotter is None:
+        return _unavailable("spotter not running")
+    try:
+        limit = int(request.query.get("limit", "10"))
+    except ValueError:
+        return web.json_response({"error": "limit must be an integer"}, status=400)
+    limit = max(1, min(limit, RANKED_MAX))
+    return web.json_response({"sightings": spotter.ranked(limit)})
+
+
 async def _query(request: web.Request, name: str, key: str) -> web.Response:
     refusal = authorize(request)
     if refusal is not None:
@@ -82,5 +100,6 @@ async def counts(request: web.Request) -> web.Response:
 
 def add_routes(app: web.Application) -> None:
     app.router.add_get("/spotter/current", current)
+    app.router.add_get("/spotter/ranked", ranked)
     app.router.add_get("/spotter/history", history)
     app.router.add_get("/spotter/counts", counts)
