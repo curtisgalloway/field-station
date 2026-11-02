@@ -16,8 +16,6 @@ CLOSE_NM = 5.0
 CLOSE_MAX = 15.0
 LOW_ALT_FT = 5000
 SHOWN_PENALTY = -50.0
-OVERHEAD_NM = 1.0
-OVERHEAD_POINTS = 200
 EMERGENCY_SQUAWKS = ("7500", "7600", "7700")
 
 # shiptype -> (points, reason); a vessel has one type, so these never stack.
@@ -80,9 +78,6 @@ def _score_aircraft(
         score += 100
         what = emergency if emergency not in (None, "none") else squawk
         reasons.append((100, f"emergency: {what}"))
-    if s.distance_nm is not None and s.distance_nm < OVERHEAD_NM:
-        score += OVERHEAD_POINTS
-        reasons.append((OVERHEAD_POINTS, "flew right over the house"))
     flags = raw.get("dbFlags") or 0
     if not isinstance(flags, int):
         flags = 0

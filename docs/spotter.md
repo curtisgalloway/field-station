@@ -46,8 +46,7 @@ already reads (and, for AIS, from AIS-catcher's own `distance`/`bearing`).
 
 Additive; every rule adds a short reason string.
 
-Aircraft: closest pass under 1.0 nm horizontal at any altitude +200 ("flew
-right over the house"); emergency or squawk 7500/7600/7700 +100; `dbFlags`
+Aircraft: emergency or squawk 7500/7600/7700 +100; `dbFlags`
 bit 1 (military) +60; bit 2 (interesting) +40; category B* +35; A7 +25;
 `year` before 1980 +30; A5 +15; type rarity up to +30; closeness up to +15
 (under 5 nm and at or below 5000 ft); no type information −10.

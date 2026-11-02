@@ -80,27 +80,14 @@ def test_closeness_needs_low_altitude_for_aircraft():
     assert sc(helpers.aircraft(dist=5.0, alt_baro=2000)).score == 0
 
 
-def test_overhead_any_altitude():
-    r = sc(helpers.aircraft(dist=0.5, alt_baro=35000))
-    assert r.score == 200 and r.reasons == ["flew right over the house"]
-    assert sc(helpers.aircraft(dist=1.0)).score == 0
-
-
-def test_overhead_outranks_other_bonuses_but_stacks_with_emergency():
-    over = sc(helpers.aircraft(dist=0.9)).score
-    assert over > sc(helpers.aircraft(dbFlags=3, category="B2", year="1950")).score
-    assert sc(helpers.aircraft(dist=0.9, squawk="7700")).score == over + 100
-
-
-def test_shown_penalty_applies_to_overhead():
-    r = sc(helpers.aircraft(dist=0.5), shown_recently=True)
-    assert r.score == 150 and r.reasons[-1] == "shown in last 24 h"
+def test_overhead_earns_no_bonus_of_its_own():
+    # Small aircraft cross the house all day; passing overhead is not news.
+    assert sc(helpers.aircraft(dist=0.5, alt_baro=35000)).score == 0
 
 
 def test_reasons_are_most_points_first():
-    r = sc(helpers.aircraft(dbFlags=1, category="A5", year="1950", dist=0.5))
-    assert r.reasons[0] == "flew right over the house"
-    assert r.reasons[1:] == ["military", "built 1950", "heavy"]
+    r = sc(helpers.aircraft(dbFlags=1, category="A5", year="1950"))
+    assert r.reasons == ["military", "built 1950", "heavy"]
 
 
 def test_vessel_types():
@@ -144,3 +131,8 @@ def test_rank_orders_and_penalizes_repeats():
     assert [r.sighting.key for r in score.rank(t, 0)] == ["a", "b"]
     t.mark_shown(a, now=0)
     assert [r.sighting.key for r in score.rank(t, 10)] == ["b", "a"]
+
+
+def test_shown_penalty():
+    r = sc(helpers.aircraft(squawk="7700"), shown_recently=True)
+    assert r.score == 50 and r.reasons[-1] == "shown in last 24 h"
