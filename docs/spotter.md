@@ -48,7 +48,9 @@ Additive; every rule adds a short reason string.
 
 Aircraft: emergency or squawk 7500/7600/7700 +100; `dbFlags`
 bit 1 (military) +60; bit 2 (interesting) +40; category B* +35; A7 +25;
-`year` before 1980 +30; A5 +15; type rarity up to +30; closeness up to +15
+`year` before 1980 +30; A5 +15; rare in the world +40 (the hand-kept list in
+`spotter/world_rare.py`: outsized freighters, low-production military types,
+historic aircraft still flying); type rarity up to +30; closeness up to +15
 (under 5 nm and at or below 5000 ft); no type information −10.
 
 Vessels: ship type 35 military +60; 51 search and rescue +40; 55 law

@@ -10,7 +10,7 @@ from field_station.spotter import table as table_lib
 
 
 def history(common=99, rare=1):
-    return table_lib.TypeHistory({"2026-10-31": {"B738": common, "B52": rare}})
+    return table_lib.TypeHistory({"2026-10-31": {"B738": common, "PC24": rare}})
 
 
 def sc(s, **kw):
@@ -57,8 +57,8 @@ def test_no_type_info_penalty():
 
 
 def test_rarity_aircraft():
-    r = sc(helpers.aircraft(t="B52"), history=history())
-    assert r.score == 30 and r.reasons == ["rarely seen here: B52, 1\u00d7 in 7 days"]
+    r = sc(helpers.aircraft(t="PC24"), history=history())
+    assert r.score == 30 and r.reasons == ["rarely seen here: PC24, 1\u00d7 in 7 days"]
     assert sc(helpers.aircraft(t="B738"), history=history()).score == 0
 
 
@@ -81,9 +81,9 @@ def test_rarity_counts_the_whole_family():
 
 
 def test_rarity_needs_enough_history():
-    small = table_lib.TypeHistory({"2026-10-31": {"B52": 1, "B738": 5}})
-    assert sc(helpers.aircraft(t="B52"), history=small).score == 0
-    assert sc(helpers.aircraft(t="B52")).score == 0
+    small = table_lib.TypeHistory({"2026-10-31": {"PC24": 1, "B738": 5}})
+    assert sc(helpers.aircraft(t="PC24"), history=small).score == 0
+    assert sc(helpers.aircraft(t="PC24")).score == 0
 
 
 def test_closeness_needs_low_altitude_for_aircraft():
@@ -150,3 +150,12 @@ def test_rank_orders_and_penalizes_repeats():
 def test_shown_penalty():
     r = sc(helpers.aircraft(squawk="7700"), shown_recently=True)
     assert r.score == 50 and r.reasons[-1] == "shown in last 24 h"
+
+
+def test_rare_in_the_world_is_separate_from_rarely_seen_here():
+    r = sc(helpers.aircraft(t="BLCF"))
+    assert r.score == 40 and r.reasons == ["rare in the world: Boeing 747 Dreamlifter"]
+    busy = table_lib.TypeHistory({"2026-10-31": {"B17": 50, "B738": 100}})
+    r = sc(helpers.aircraft(t="B17"), history=busy)
+    assert r.reasons == ["rare in the world: Boeing B-17 Flying Fortress"]
+    assert sc(helpers.aircraft(t="C172")).score == 0

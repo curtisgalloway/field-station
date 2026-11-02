@@ -8,6 +8,7 @@ from field_station.spotter import families
 from field_station.spotter import model
 from field_station.spotter import names
 from field_station.spotter import table as table_lib
+from field_station.spotter import world_rare
 
 RARITY_MAX = 30.0
 RARITY_MIN_TOTAL = 20
@@ -127,10 +128,18 @@ def _score_aircraft(
         score -= 10
         reasons.append((-10, "no type info"))
     else:
+        world = world_rare.world_rare(tcode)
+        if world:
+            score += world_rare.WORLD_RARE_POINTS
+            reasons.append(
+                (world_rare.WORLD_RARE_POINTS, f"rare in the world: {world}")
+            )
         rare = rarity_points(tcode, history)
         if rare > 0:
             score += rare
-            reasons.append((rare, rarity_reason(families.family(tcode), tcode, history)))
+            reasons.append(
+                (rare, rarity_reason(families.family(tcode), tcode, history))
+            )
     if _is_low(raw):
         close = closeness_points(s.distance_nm)
         if close > 0:
