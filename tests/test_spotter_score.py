@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Spotter scoring rules (docs/spotter.md, "Scoring")."""
 
+import math
+
 import pytest
 import spotter_helpers as helpers
 
@@ -56,28 +58,34 @@ def test_no_type_info_penalty():
     assert r.score == -10 and r.reasons == ["no type info"]
 
 
+def four_weeks(**counts):
+    """A history spanning 28 days, with `counts` on the last day."""
+    return table_lib.TypeHistory(
+        {"2026-10-01": {"FILL": 30}, "2026-10-28": dict(counts)}
+    )
+
+
 def test_rarity_aircraft():
     r = sc(helpers.aircraft(t="PC24"), history=history())
-    assert r.score == 30 and r.reasons == ["rarely seen here: PC24, 1\u00d7 in 7 days"]
+    assert r.score == 60 and r.reasons == ["rarely seen here: PC24, none before today"]
     assert sc(helpers.aircraft(t="B738"), history=history()).score == 0
 
 
-def test_rarity_is_linear_between_two_and_twenty_contacts():
-    hist = table_lib.TypeHistory({"2026-10-31": {"X": 11, "Y": 945}})
-    assert score.rarity_points("X", hist) == pytest.approx(15.0)
-    hist = table_lib.TypeHistory({"2026-10-31": {"X": 2, "Y": 945}})
-    assert score.rarity_points("X", hist) == 30
-    hist = table_lib.TypeHistory({"2026-10-31": {"X": 20, "Y": 945}})
-    assert score.rarity_points("X", hist) == 0
+def test_rarity_is_log_scaled_from_weekly_to_four_monthly():
+    # Counts include the sighting being scored, which is left out.
+    assert score.rarity_points("X", four_weeks(X=5)) == 0  # 1 a week
+    monthly = score.rarity_points("X", four_weeks(X=2))  # 1 in 4 weeks
+    assert monthly == pytest.approx(60 * math.log(4) / math.log(18))
+    assert score.rarity_points("X", four_weeks(X=1)) == 60  # none before
+    r = sc(helpers.aircraft(t="PC24"), history=four_weeks(PC24=2))
+    assert r.reasons == ["rarely seen here: PC24, about 1 a month"]
 
 
 def test_rarity_counts_the_whole_family():
-    hist = table_lib.TypeHistory(
-        {"2026-10-31": {"C172": 58, "C182": 1, "C25B": 1, "B738": 100}}
-    )
+    hist = four_weeks(C172=58, C182=1, C25B=1)
     assert score.rarity_points("C182", hist) == 0  # 59 Cessna singles
     r = sc(helpers.aircraft(t="C25B"), history=hist)
-    assert r.reasons == ["rarely seen here: Citation jets, 1\u00d7 in 7 days"]
+    assert r.reasons == ["rarely seen here: Citation jets, none in the last 28 days"]
 
 
 def test_rarity_needs_enough_history():
@@ -133,8 +141,8 @@ def test_vessel_length_rarity_closeness():
     assert sc(helpers.vessel(dist=0.0)).score == 15
     hist = table_lib.TypeHistory({"2026-10-31": {"ship:37": 99, "ship:35": 1}})
     r = sc(helpers.vessel(shiptype=35), history=hist)
-    assert r.score == 90
-    assert "rarely seen here: military, 1\u00d7 in 7 days" in r.reasons
+    assert r.score == 120
+    assert "rarely seen here: military, none before today" in r.reasons
 
 
 def test_rank_orders_and_penalizes_repeats():

@@ -10,7 +10,7 @@ import datetime
 from field_station.spotter import model
 
 KEEP_SECONDS = 60 * 60
-HISTORY_DAYS = 7
+HISTORY_DAYS = 90
 SHOWN_SECONDS = 24 * 60 * 60
 
 
@@ -34,7 +34,7 @@ def _day(ts: float) -> str:
 
 
 class TypeHistory:
-    """Per-day counts of distinct sightings by type, kept for 7 days."""
+    """Per-day counts of distinct sightings by type, kept for 90 days."""
 
     def __init__(self, days: dict[str, dict[str, int]] | None = None) -> None:
         self.days: dict[str, dict[str, int]] = days or {}
@@ -55,6 +55,14 @@ class TypeHistory:
         return sum(
             n for day in self.days.values() for key, n in day.items() if keep(key)
         )
+
+    def days_covered(self) -> int:
+        """Days from the first day with data to the last, inclusive (at least 1)."""
+        if not self.days:
+            return 1
+        first = datetime.date.fromisoformat(min(self.days))
+        last = datetime.date.fromisoformat(max(self.days))
+        return (last - first).days + 1
 
     def total(self) -> int:
         return sum(sum(day.values()) for day in self.days.values())

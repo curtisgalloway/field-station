@@ -4,16 +4,18 @@
 
 from __future__ import annotations
 
+import math
+
 from field_station.spotter import families
 from field_station.spotter import model
 from field_station.spotter import names
 from field_station.spotter import table as table_lib
 from field_station.spotter import world_rare
 
-RARITY_MAX = 30.0
+RARITY_MAX = 60.0
 RARITY_MIN_TOTAL = 20
-RARE_COUNT = 2  # contacts in 7 days at or below which rarity is full
-COMMON_COUNT = 20  # contacts in 7 days at or above which it is none
+COMMON_PER_WEEK = 1.0  # seen this often or more: no points
+RARE_PER_WEEK = 1 / 18  # about once in four months or less: full points
 CLOSE_NM = 5.0
 CLOSE_MAX = 15.0
 LOW_ALT_FT = 5000
@@ -39,31 +41,60 @@ Reasons = list[tuple[float, str]]
 
 
 def seen_count(type_id: str, history: table_lib.TypeHistory) -> int:
-    """Contacts in the 7-day history of this type's family (or ship type)."""
+    """Other contacts of this type's family (or ship type) in the history.
+
+    The history already counts the sighting being scored; it is left out, so
+    a first visit counts 0.
+    """
     if type_id.startswith("ship:"):
-        return history.count(type_id)
-    fam = families.family(type_id)
-    return history.count_where(
-        lambda key: not key.startswith("ship:") and families.family(key) == fam
-    )
+        n = history.count(type_id)
+    else:
+        fam = families.family(type_id)
+        n = history.count_where(
+            lambda key: not key.startswith("ship:") and families.family(key) == fam
+        )
+    return max(0, n - 1)
+
+
+def per_week(type_id: str, history: table_lib.TypeHistory) -> float:
+    """How often this family typically turns up here, per week."""
+    return seen_count(type_id, history) * 7 / history.days_covered()
 
 
 def rarity_points(type_id: str | None, history: table_lib.TypeHistory | None) -> float:
-    """Returns 0..30: how rarely this family is seen here, not rarity in the world.
+    """Returns 0..60 from how often this family is typically seen here.
 
-    Full marks at 2 or fewer contacts of the family in the last 7 days, none at
-    20 or more, linear between; off until the history holds 20 contacts.
+    This is the base of the score: how unexpected the contact is at this
+    receiver, estimated from up to 90 days of history. Rare in the world is a
+    separate rule (world_rare). Log scale, since rates run from dozens a day to
+    a few a year: none at weekly or more, about half at monthly, full at about
+    once in four months or less (or never). Off until the history holds 20
+    contacts.
     """
     if not type_id or history is None or history.total() < RARITY_MIN_TOTAL:
         return 0.0
-    count = seen_count(type_id, history)
-    frac = (COMMON_COUNT - count) / (COMMON_COUNT - RARE_COUNT)
+    rate = per_week(type_id, history)
+    if rate <= RARE_PER_WEEK:
+        return RARITY_MAX
+    frac = math.log(COMMON_PER_WEEK / rate) / math.log(COMMON_PER_WEEK / RARE_PER_WEEK)
     return RARITY_MAX * min(1.0, max(0.0, frac))
 
 
+def how_often(type_id: str, history: table_lib.TypeHistory) -> str:
+    """Plain words for the typical rate: "about 2 a month"."""
+    if seen_count(type_id, history) == 0:
+        days = history.days_covered()
+        return "none before today" if days == 1 else f"none in the last {days} days"
+    rate = per_week(type_id, history)
+    if rate >= 1:
+        return f"about {round(rate)} a week"
+    if rate * 52 / 12 >= 1:
+        return f"about {round(rate * 52 / 12)} a month"
+    return f"about {max(1, round(rate * 52))} a year"
+
+
 def rarity_reason(label: str, type_id: str, history: table_lib.TypeHistory) -> str:
-    count = seen_count(type_id, history)
-    return f"rarely seen here: {label}, {count}\u00d7 in 7 days"
+    return f"rarely seen here: {label}, {how_often(type_id, history)}"
 
 
 def closeness_points(distance_nm: float | None) -> float:

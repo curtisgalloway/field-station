@@ -119,7 +119,7 @@ def test_history_counts_distinct_sightings_once_and_expires():
     t.merge([helpers.aircraft("a", now=0)], now=0)
     t.merge([helpers.aircraft("a", now=60)], now=60)
     assert t.history.count("B738") == 1
-    t.prune(8 * 24 * 3600)
+    t.prune(91 * 24 * 3600)
     assert t.history.total() == 0
 
 
