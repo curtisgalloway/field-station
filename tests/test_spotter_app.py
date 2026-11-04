@@ -93,6 +93,22 @@ def test_parse_ships_uses_catcher_distance(ships_fixture):
     assert "366000005" not in by_key  # static data only: no distance
 
 
+@pytest.mark.parametrize(
+    "mmsi,kept",
+    [
+        (366000001, True),  # ship
+        (982000001, True),  # craft carried by a ship
+        (993000004, False),  # navigation aid
+        (3660000, False),  # coast station, leading zeros dropped
+        (123108800, False),  # net buoy
+        (970000001, False),  # rescue beacon
+    ],
+)
+def test_parse_ships_keeps_only_ships(mmsi, kept):
+    ships = {"ships": [{"mmsi": mmsi, "distance": 1.0}]}
+    assert bool(service.parse_ships(ships, 1000.0)) is kept
+
+
 def test_fields_map_receiver_data():
     raw = {
         "hex": "a1",
@@ -122,7 +138,7 @@ def test_fields_map_receiver_data():
         {
             "ships": [
                 {
-                    "mmsi": 1,
+                    "mmsi": 366000009,
                     "distance": 2.0,
                     "bearing": 3,
                     "shiptype": 71,

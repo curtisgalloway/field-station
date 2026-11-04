@@ -68,15 +68,26 @@ def parse_aircraft(
     return out
 
 
+def is_ship_station(mmsi) -> bool:
+    """True if an MMSI belongs to a ship or a craft carried by one.
+
+    Ships start with 2-7, carried craft with 98. Everything else is equipment:
+    coast stations, navigation aids, rescue beacons, and the net buoys that
+    broadcast made-up numbers.
+    """
+    text = str(mmsi)
+    return len(text) == 9 and (text[0] in "234567" or text.startswith("98"))
+
+
 def parse_ships(data: dict, now: float) -> list[model.Sighting]:
-    """Converts a ships.json document; skips ships with no distance.
+    """Converts a ships.json document; skips equipment and ships with no distance.
 
     Uses AIS-catcher's own ``distance`` (nm) and ``bearing``.
     """
     out = []
     for rec in data.get("ships", []):
         mmsi, distance = rec.get("mmsi"), _number(rec.get("distance"))
-        if mmsi is None or distance is None:
+        if mmsi is None or distance is None or not is_ship_station(mmsi):
             continue
         seen = _number(rec.get("last_signal")) or 0.0
         out.append(
